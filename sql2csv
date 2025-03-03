@@ -1,0 +1,214 @@
+#!/usr/bin/env python
+
+# /// script
+# requires-python = "~=3.12"
+# dependencies = [
+#     "docker~=7.1",
+#     "mysql-connector-python~=9.2",
+#     "tqdm~=4.67",
+# ]
+# ///
+
+"""Script to convert all tables in a sql file to csv's."""
+
+import argparse
+import csv
+import logging
+import socket
+import time
+from pathlib import Path
+
+import docker
+import mysql.connector
+from tqdm import tqdm
+
+
+def cli() -> None:
+    """Command line."""
+    parser = argparse.ArgumentParser(
+        description="Python Script to convert sql files to csv.",
+    )
+    parser.add_argument(
+        "-i",
+        "--inputfile",
+        type=Path,
+        help="Path to the input file",
+        required=True,
+    )
+    parser.add_argument(
+        "-o",
+        "--outputdir",
+        type=Path,
+        help="Path to the output directory",
+        required=False,
+    )
+    args = parser.parse_args()
+    return vars(args)
+
+
+def find_free_port(host: str = "localhost") -> int:
+    """Find a free port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        logging.info("Using Port: %d", sock.getsockname()[1])
+        return sock.getsockname()[1]
+
+
+def start_docker(conf: dict) -> docker.models.containers.Container:
+    """Start Mysql docker container."""
+    client = docker.from_env()
+    container = client.containers.run(
+        "mysql",
+        environment={
+            "MYSQL_ROOT_PASSWORD": conf["password"],
+            "MYSQL_DATABASE": conf["database"],
+        },
+        ports={3306: conf["port"]},
+        detach=True,
+        auto_remove=False,
+    )
+    logging.info("Started Mysql container: %s", container.short_id)
+    time.sleep(15)
+    return container
+
+
+def mysql_connection(
+    conf: dict,
+) -> (mysql.connector.cursor.MySQLCursor, mysql.connector.connection.MySQLConnection):
+    """Connect to Mysql server within docker."""
+    for t in [5 + (x * 2) for x in range(10)]:
+        try:
+            connection = mysql.connector.connect(
+                host=conf["host"],
+                port=conf["port"],
+                user=conf["user"],
+                password=conf["password"],
+                database=conf["database"],
+                connection_timeout=conf["timeout"],
+            )
+            if connection.is_connected():
+                logging.info("Successfully connected to MySQL server!")
+                cursor = connection.cursor()
+                cursor.execute(f"SET SESSION net_read_timeout={conf['timeout']};")
+                cursor.execute(f"SET SESSION net_write_timeout={conf['timeout']};")
+                cursor.execute(f"SET SESSION wait_timeout={conf['timeout']};")
+                cursor.execute(f"SET SESSION interactive_timeout={conf['timeout']};")
+                cursor.fetchall()
+            break
+        except mysql.connector.Error as err:
+            logging.exception(err)
+            logging.info("Retrying after %d s", t)
+            time.sleep(t)
+    return cursor, connection
+
+
+def file_manage(sqlfile: Path) -> str:
+    """Give chunks of sql file."""
+    sql_command = ""
+    with Path.open(sqlfile) as file:
+        for line in file:
+            clean_line = line.strip()
+            sql_command += clean_line
+            if clean_line.endswith(";"):
+                yield sql_command
+                sql_command = ""
+        yield sql_command
+
+
+def flat_list(orginal_list: list) -> list:
+    """Flaten list."""
+    return [y for x in orginal_list for y in x]
+
+
+def load_sql(sqlfile: Path, print_len: int) -> None:
+    """Load sql to server."""
+    logging.info("Loading sql file %s", sqlfile)
+    try:
+        for cmd in tqdm(file_manage(sqlfile), desc="Loading", unit=""):
+            cursor.execute(cmd)
+    except mysql.connector.errors.DatabaseError as err:
+        logging.exception(err)
+        if len(cmd) > print_len:
+            logging.info(cmd[-print_len:])
+        else:
+            logging.info(cmd)
+    logging.info("SQL file has been loaded.")
+
+
+def fetch_schema(cursor: mysql.connector.cursor.MySQLCursor) -> dict:
+    """Fetch database names and table names."""
+    cursor.execute(
+        """SELECT schema_name FROM information_schema.schemata
+        WHERE schema_name NOT IN
+        ('information_schema', 'performance_schema', 'mysql', 'sys');""",
+    )
+    dbs = cursor.fetchall()
+    dbs = flat_list(dbs)
+    schema = {}
+    for db in dbs:
+        cursor.execute(f"USE `{db}`")
+        cursor.execute("SHOW TABLES")
+        schema[db] = flat_list(cursor.fetchall())
+    logging.info("schema: %s", schema)
+    cursor.fetchall()
+    return schema
+
+
+def write_csv(schema: dict, outputdir: Path) -> None:
+    """Fetch tables and write them as csv's."""
+    for db, table_list in schema.items():
+        for table in table_list:
+            logging.info("Writing %s from %s", table, db)
+            cursor.fetchall()
+            cursor.execute(f"USE {db}")
+            cursor.execute("SELECT * FROM %s", table)
+            columns = [column[0] for column in cursor.description]
+            csvfile = outputdir / f"{db}.{table}.csv"
+            with Path.open(csvfile, mode="w") as wfile:
+                writer = csv.writer(wfile)
+                writer.writerow(columns)
+                for row in cursor:
+                    writer.writerow(
+                        [x.decode("utf8") if isinstance(x, bytes) else x for x in row],
+                    )
+
+
+def cleanup(
+    cursor: mysql.connector.cursor.MySQLCursor,
+    connection: mysql.connector.connection.MySQLConnection,
+    mysql_container: docker.models.containers.Container,
+) -> None:
+    """Close cursor, connection and stop container."""
+    cursor.close()
+    connection.close()
+    mysql_container.stop()
+    logging.info("MySQL container stopped and removed.")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        format="%(asctime)s : %(levelname)s : %(message)s",
+        datefmt="%Y%m%dT%H%M%S",
+        encoding="utf-8",
+        level=logging.INFO,
+    )
+
+    conf = {
+        "host": "localhost",
+        "user": "root",
+        "password": "password",
+        "database": "db",
+        "timeout": 1800,
+        "print_len": 100,
+    }
+    args = cli()
+    conf["port"] = find_free_port(host=conf["host"])
+    mysql_container = start_docker(conf=conf)
+    cursor, connection = mysql_connection(conf=conf)
+    load_sql(args["inputfile"], print_len=conf["print_len"])
+    schema = fetch_schema(cursor)
+
+    if args["outputdir"]:
+        write_csv(schema, outputdir=args["outputdir"])
+
+    cleanup(cursor, connection, mysql_container)
