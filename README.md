@@ -1,4 +1,4 @@
-# sql2c: SQL File Checker and CSV Dumper
+# sql2c: SQL File (mysql) Checker and CSV Dumper
 
 ## Purpose:
 
@@ -21,12 +21,24 @@
     * tqdm
 * `.sql` file as input.
 
-## Installation:
+## Examples:
 
-* Clone or download script.
-* `cd` into the directory.
-* Run
-    * ``` bash
-    uv run sql2c -i <file.sql>
-    ```
+``` bash
+# Example1
+uv run sql2c -i <file.sql>
+```
+``` bash
+# Example2
+uv run sql2c -h
+usage: sql2c [-h] -i INPUTFILE [-o OUTPUTDIR]
+
+Python Script to convert sql files to csv.
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUTFILE, --inputfile INPUTFILE
+                        Path to the input file
+  -o OUTPUTDIR, --outputdir OUTPUTDIR
+                        Path to the output directory
+```
 
