@@ -25,11 +25,11 @@
 
 ``` bash
 # Example1
-uv run sql2c -i <file.sql>
+uv run ./sql2c -i <file.sql>
 ```
 ``` bash
 # Example2
-uv run sql2c -h
+uv run ./sql2c -h
 usage: sql2c [-h] -i INPUTFILE [-o OUTPUTDIR]
 
 Python Script to convert sql files to csv.
