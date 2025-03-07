@@ -24,11 +24,27 @@
 ## Examples:
 
 ``` bash
-# Example1
-uv run ./sql2c -i <file.sql>
+# Example 1
+python ./sql2c -i <file.sql>
+
+# Example 2
+python ./sql2c -h
+usage: sql2c [-h] -i INPUTFILE [-o OUTPUTDIR]
+
+Python Script to convert sql files to csv.
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUTFILE, --inputfile INPUTFILE
+                        Path to the input file
+  -o OUTPUTDIR, --outputdir OUTPUTDIR
+                        Path to the output directory
 ```
 ``` bash
-# Example2
+# Example 1 using uv
+uv run ./sql2c -i <file.sql>
+
+# Example 2 using uv
 uv run ./sql2c -h
 usage: sql2c [-h] -i INPUTFILE [-o OUTPUTDIR]
 
