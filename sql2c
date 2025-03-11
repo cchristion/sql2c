@@ -95,8 +95,8 @@ def mysql_connection(
                 cursor.execute(f"SET SESSION interactive_timeout={conf['timeout']};")
                 cursor.fetchall()
             break
-        except mysql.connector.Error as err:
-            logging.exception(err)
+        except mysql.connector.Error:
+            logging.exception()
             logging.info("Retrying after %d s", t)
             time.sleep(t)
     return cursor, connection
@@ -126,8 +126,8 @@ def load_sql(sqlfile: Path, print_len: int) -> None:
     try:
         for cmd in tqdm(file_manage(sqlfile), desc="Loading", unit=""):
             cursor.execute(cmd)
-    except mysql.connector.errors.DatabaseError as err:
-        logging.exception(err)
+    except mysql.connector.errors.DatabaseError:
+        logging.exception()
         if len(cmd) > print_len:
             logging.info(cmd[:print_len])
         else:
@@ -161,7 +161,7 @@ def write_csv(schema: dict, outputdir: Path) -> None:
             logging.info("Writing %s from %s", table, db)
             cursor.fetchall()
             cursor.execute(f"USE {db}")
-            cursor.execute("SELECT * FROM %s", table)
+            cursor.execute(f"SELECT * FROM {table}")
             columns = [column[0] for column in cursor.description]
             csvfile = outputdir / f"{db}.{table}.csv"
             with Path.open(csvfile, mode="w") as wfile:
