@@ -129,7 +129,7 @@ def load_sql(sqlfile: Path, print_len: int) -> None:
     except mysql.connector.errors.DatabaseError as err:
         logging.exception(err)
         if len(cmd) > print_len:
-            logging.info(cmd[-print_len:])
+            logging.info(cmd[:print_len])
         else:
             logging.info(cmd)
     logging.info("SQL file has been loaded.")
